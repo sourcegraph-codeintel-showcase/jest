@@ -1,115 +1,32 @@
-aliases:
-  - &restore-cache
-    keys:
-      - v3-dependencies-{{ .Branch }}-{{ checksum "yarn.lock" }}
-      # Fallback in case checksum fails
-      - v3-dependencies-{{ .Branch }}-
+version: 2.1
 
-  - &save-cache
-    paths:
-      - ~/.cache/yarn
-    key: v3-dependencies-{{ .Branch }}-{{ checksum "yarn.lock" }}
-
-  - &filter-ignore-gh-pages
-    branches:
-      ignore: gh-pages
-  - &install yarn install && yarn build:js
-
-version: 2
 jobs:
-  test-node-10:
-    working_directory: ~/jest
-    docker:
-      - image: circleci/node:10
-    steps:
-      - checkout
-      - restore-cache: *restore-cache
-      - run: *install
-      - save-cache: *save-cache
-      - run:
-          command: yarn test-ci-partial
-      - store_test_results:
-          path: reports/junit
-
-  test-jest-circus:
-    working_directory: ~/jest
+  install-deps:
     docker:
       - image: circleci/node:12
     steps:
       - checkout
-      - restore-cache: *restore-cache
-      - run: *install
-      - save-cache: *save-cache
-      - run:
-          command: JEST_CIRCUS=1 yarn test-ci-partial && JEST_CIRCUS=1 yarn test-leak
-      - store_test_results:
-          path: reports/junit
-
-  test-node-12:
-    working_directory: ~/jest
+      - run: yarn
+      - save_cache:
+          paths:
+            - node_modules
+            - website/node_modules
+          key: dependencies
+  lsif-node:
     docker:
-      - image: circleci/node:12
+      - image: sourcegraph/lsif-node@sha256:943e620468baa9c1ad01a469e4ada02221105c6c4172542c8136965e482db791
     steps:
       - checkout
-      - restore-cache: *restore-cache
-      - run: *install
-      - save-cache: *save-cache
-      - run:
-          command: yarn test-ci
-      - store_test_results:
-          path: reports/junit
+      - restore_cache:
+          keys:
+            - dependencies
+      - run: lsif-tsc -p .
+      - run: src lsif upload -no-progress
 
-  test-node-13:
-    working_directory: ~/jest
-    docker:
-      - image: circleci/node:13
-    steps:
-      - checkout
-      - restore-cache: *restore-cache
-      - run: *install
-      - save-cache: *save-cache
-      - run:
-          command: yarn test-ci-partial
-      - store_test_results:
-          path: reports/junit
-
-  test-node-14:
-    working_directory: ~/jest
-    docker:
-      - image: circleci/node:14
-    steps:
-      - checkout
-      - restore-cache: *restore-cache
-      - run: *install
-      - save-cache: *save-cache
-      - run:
-          command: yarn test-ci-partial
-      - store_test_results:
-          path: reports/junit
-
-  test-or-deploy-website:
-    working_directory: ~/jest
-    docker:
-      - image: circleci/node:12
-    resource_class: large
-    steps:
-      - checkout
-      - restore-cache: *restore-cache
-      - run: *install
-      - save-cache: *save-cache
-      - run:
-          name: Test or Deploy Jest Website
-          command: ./.circleci/website.sh
-
-# Workflows enables us to run multiple jobs in parallel
 workflows:
-  version: 2
-  build-and-deploy:
+  lsif-node:
     jobs:
-      - test-node-10
-      - test-node-12
-      - test-node-13
-      - test-node-14 # current
-      - test-jest-circus
-      - test-or-deploy-website:
-          filters: *filter-ignore-gh-pages
+      - install-deps
+      - lsif-node:
+          requires:
+            - install-deps
